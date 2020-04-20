@@ -111,11 +111,6 @@
   (c/status-update! (:connection @state)
                     :activity (c/create-activity :name "!getoofs")))
 
-(defmethod handle-event :connected-all-shards
-  [event-type event-data]
-  (c/status-update! (:connection @state)
-                    :activity (c/create-activity :name "!getoofs")))
-
 (defmethod handle-event :message-create
   [event-type {{bot :bot user-id :id username :username} :author
                channel-id :channel-id
