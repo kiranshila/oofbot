@@ -155,15 +155,15 @@
 
 (defn -main
   [& args]
-  (future (let [event-ch (a/chan 100)
-                connection-ch (c/connect-bot! token event-ch :intents #{:guild-messages
-                                                                        :guild-message-reactions})
-                messaging-ch (m/start-connection! token)
-                init-state {:connection connection-ch
-                            :event event-ch
-                            :messaging messaging-ch}]
-            (reset! state init-state)
-            (save-data)
-            (e/message-pump! event-ch #'handle-event)
-            (m/stop-connection! messaging-ch)
-            (c/disconnect-bot! connection-ch))))
+  (let [event-ch (a/chan 100)
+        connection-ch (c/connect-bot! token event-ch :intents #{:guild-messages
+                                                                :guild-message-reactions})
+        messaging-ch (m/start-connection! token)
+        init-state {:connection connection-ch
+                    :event event-ch
+                    :messaging messaging-ch}]
+    (reset! state init-state)
+    (save-data)
+    (e/message-pump! event-ch #'handle-event)
+    (m/stop-connection! messaging-ch)
+    (c/disconnect-bot! connection-ch)))
