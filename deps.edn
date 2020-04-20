@@ -1,0 +1,7 @@
+{:paths ["src"]
+ :deps {org.clojure/clojure {:mvn/version "1.10.1"}
+        org.suskalo/discljord {:mvn/version "0.2.8"}
+        org.clojure/core.async {:mvn/version "1.1.587"}}
+ :aliases {:depstar
+           {:extra-deps
+            {seancorfield/depstar {:mvn/version "1.0.94"}}}}}
