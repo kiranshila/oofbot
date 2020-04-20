@@ -149,7 +149,6 @@
   (a/go-loop []
     (a/<! (a/timeout (* 5 60 1000)))
     (print "Saving data\n")
-    (set-status) ;; This randomly gets changed?
     (write-edn @oof-data "oof-data.edn")
     (recur)))
 
