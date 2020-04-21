@@ -161,3 +161,76 @@
     (e/message-pump! event-ch #'handle-event)
     (m/stop-connection! messaging-ch)
     (c/disconnect-bot! connection-ch)))
+
+(do
+  (require 'discljord.connections.impl)
+  (let [old-ns *ns*]
+    (in-ns 'discljord.connections.impl)
+    (defn step-shard!
+      "Starts a process to step a `shard`, handling side-effects.
+       Returns a channel which will have a map with the new `:shard` and a vector of
+       `:effects` for the entire bot to respond to placed on it after the next item
+       the socket may respond to occurs."
+      [shard url token]
+      (log/trace "Stepping shard" (:id shard) shard)
+      (let [{:keys [event-ch websocket heartbeat-ch communication-ch stop-ch] :or {heartbeat-ch (a/chan)}} shard
+            stop-fn (fn []
+                      (when heartbeat-ch
+                        (a/close! heartbeat-ch))
+                      (a/close! communication-ch)
+                      (when websocket
+                        (ws/close (:ws websocket))
+                        (.stop (:client websocket)))
+                      (log/info "Disconnecting shard"
+                                (:id shard)
+                                "and closing connection")
+                      {:shard nil
+                       :effects []})
+            communication-fn (fn [[event-type event-data :as value]]
+                               (log/debug "Recieved communication value" value "on shard" (:id shard))
+                               (handle-shard-communication! shard heartbeat-ch url event-ch value))
+            heartbeat-fn (fn []
+                           (if (:ack shard)
+                             (do (log/trace "Sending heartbeat payload on shard" (:id shard))
+                                 (ws/send-msg (:ws websocket)
+                                              (json/write-str {:op 1
+                                                               :d (:seq shard)}))
+                                 {:shard (dissoc shard :ack)
+                                  :effects []})
+                             (do
+                               (when websocket
+                                 (ws/close (:ws websocket))
+                                 (.stop (:client websocket)))
+                               (log/info "Reconnecting due to zombie heartbeat on shard" (:id shard))
+                               (a/close! heartbeat-ch)
+                               (a/put! communication-ch [:connect])
+                               {:shard (assoc (dissoc shard :heartbeat-ch)
+                                              :requested-disconnect true)
+                                :effects []})))
+            event-fn (fn [event]
+                       (let [{:keys [shard effects]} (handle-websocket-event shard event)
+                             shard-map (reduce
+                                        (fn [{:keys [shard effects]} new-effect]
+                                          (let [old-effects effects
+                                                {:keys [shard effects]}
+                                                (handle-shard-fx! heartbeat-ch url token shard new-effect)
+                                                new-effects (vec (concat old-effects effects))]
+                                            {:shard shard
+                                             :effects new-effects}))
+                                        {:shard shard
+                                         :effects []}
+                                        effects)]
+                         shard-map))]
+        (a/go
+          (if (:websocket shard)
+            (a/alt!
+              stop-ch (stop-fn)
+              communication-ch ([args] (communication-fn args))
+              heartbeat-ch (heartbeat-fn)
+              event-ch ([event] (event-fn event))
+              :priority true)
+            (a/alt!
+              stop-ch (stop-fn)
+              event-ch ([event] (event-fn event))
+              :priority true)))))
+    (in-ns old-ns)))
