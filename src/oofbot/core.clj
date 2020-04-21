@@ -143,6 +143,7 @@
 (defn save-data []
   (a/go-loop []
     (a/<! (a/timeout (* 5 60 1000)))
+    (set-status)
     (print "Saving data\n")
     (write-edn @oof-data "oof-data.edn")
     (recur)))
