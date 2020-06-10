@@ -19,7 +19,10 @@
       (pr data))))
 
 ;; State Object
-(def state (atom nil))
+(defonce state (atom nil))
+
+;; Bot User ID
+(defonce bot-id (atom nil))
 
 ;; Atom for oofbot data
 (def oof-data
@@ -110,12 +113,18 @@
        (get-in @oof-data [guild-id user-id :gotten-oofed])
        "```"))
 
+(def oofhelp "```!getoofs - Display oof leaderboard\n!myoofs - Display user's oofs\n!oofhelp - This help```")
+
 (defmulti handle-event
   (fn [event-type event-data]
     event-type))
 
 (defmethod handle-event :default
   [event-type event-data])
+
+(defmethod handle-event :ready
+  [event-type {{id :id} :user}]
+  (reset! bot-id id))
 
 (defn set-status []
   (c/status-update! (:connection @state)
@@ -126,19 +135,21 @@
                channel-id :channel-id
                content :content
                message-id :id
+               mentions :mentions
                guild-id :guild-id}]
-  (if (and (is-oof? content)
-           (not bot))
-    (do-oof-message user-id message-id channel-id guild-id)
+  (cond
+    (and (is-oof? content) (not bot)) (do-oof-message user-id message-id channel-id guild-id)
+    (and (contains? (set mentions) @bot-id)
+         (re-matches #"<@!?\d+>" content)) (send-message oofhelp channel-id)
     ;; Commands
-    (when (and (= (first content) \!)
-             (not bot))
-      (when (includes? (lower-case content) "getoofs")
-        (send-message (get-oofs guild-id) channel-id))
-      (when (includes? (lower-case content) "myoofs")
-        (send-message (my-oofs guild-id user-id) channel-id))
-      (when (includes? (lower-case content) "oofhelp")
-        (send-message "```!getoofs - Display oof leaderboard\n!myoofs - Display user's oofs\n!oofhelp - This help```" channel-id)))))
+    :else (when (and (= (first content) \!)
+                     (not bot))
+            (when (= (subs content 1) "getoofs")
+              (send-message (get-oofs guild-id) channel-id))
+            (when (= (subs content 1) "myoofs")
+              (send-message (my-oofs guild-id user-id) channel-id))
+            (when (= (subs content 1) "oofhelp")
+              (send-message oofhelp channel-id)))))
 
 (defmethod handle-event :message-reaction-add
   [event-type {:keys [user-id channel-id message-id emoji guild-id]}]
