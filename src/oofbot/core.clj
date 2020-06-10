@@ -104,10 +104,10 @@
 (defn my-oofs [guild-id user-id]
   (str "```\n"
        "Given Oofs: "
-       (get-in oof-data [guild-id user-id :given-oof])
+       (get-in @oof-data [guild-id user-id :given-oof])
        "\n"
        "Gotten Oofed: "
-       (get-in oof-data [guild-id user-id :gotten-oofed])
+       (get-in @oof-data [guild-id user-id :gotten-oofed])
        "```"))
 
 (defmulti handle-event
@@ -131,14 +131,14 @@
            (not bot))
     (do-oof-message user-id message-id channel-id guild-id)
     ;; Commands
-    (if (and (= (first content) \!)
+    (when (and (= (first content) \!)
              (not bot))
-      (if (includes? (lower-case content) "getoofs")
+      (when (includes? (lower-case content) "getoofs")
         (send-message (get-oofs guild-id) channel-id))
-      (if (includes? (lower-case content) "myoofs")
+      (when (includes? (lower-case content) "myoofs")
         (send-message (my-oofs guild-id user-id) channel-id))
-      (if (includes? (lower-case content) "oofhelp")
-        (send-message "```!getoofs - Display oof leaderboard\n!myoofs - Display user's oofs\n!oofhelp - This help```")))))
+      (when (includes? (lower-case content) "oofhelp")
+        (send-message "```!getoofs - Display oof leaderboard\n!myoofs - Display user's oofs\n!oofhelp - This help```" channel-id)))))
 
 (defmethod handle-event :message-reaction-add
   [event-type {:keys [user-id channel-id message-id emoji guild-id]}]
@@ -172,7 +172,7 @@
                     :messaging messaging-ch}]
     (reset! state init-state)
     (save-data)
-    (e/message-pump! event-ch #'handle-event)
     (set-status)
+    (e/message-pump! event-ch #'handle-event)
     (m/stop-connection! messaging-ch)
     (c/disconnect-bot! connection-ch)))

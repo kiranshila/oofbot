@@ -12,14 +12,9 @@
       <version>1.10.1</version>
     </dependency>
     <dependency>
-      <groupId>org.suskalo</groupId>
-      <artifactId>discljord</artifactId>
-      <version>0.2.8</version>
-    </dependency>
-    <dependency>
       <groupId>org.clojure</groupId>
       <artifactId>core.async</artifactId>
-      <version>1.1.587</version>
+      <version>1.2.603</version>
     </dependency>
   </dependencies>
   <build>
