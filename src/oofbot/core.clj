@@ -44,9 +44,13 @@
                             :before before-id
                             :limit top-count))
 
-;; Get a username from a user-id
-(defn get-username [user-id]
-  (:username @(m/get-user! (:messaging @state) user-id)))
+;; Get a username from the data, update data if we don't have it
+(defn get-username [user-id guild-id]
+  (if-let [username (get-in @oof-data [guild-id user-id :username])]
+    username
+    (let [new-username (:username @(m/get-user! (:messaging @state) user-id))]
+      (swap! oof-data assoc-in [guild-id user-id :username] new-username)
+      new-username)))
 
 ;; Get a message from a message-id and channel-id
 (defn get-message [message-id channel-id]
@@ -83,15 +87,15 @@
   (take top-count (sort-by (comp key second) (fnil > 0 0) (into [] (get @oof-data guild-id)))))
 
 ;; Convert an oof data row into a "username" "count" map
-(defn oof-row-to-table [oof-data-row key]
-  {"Username" (get-username (first oof-data-row))
+(defn oof-row-to-table [oof-data-row key guild-id]
+  {"Username" (get-username (first oof-data-row) guild-id)
    "Count" (get (second oof-data-row) key)})
 
 ;; Convert oof-data into an ascii table sorted by key
 (defn oof-data-to-table [key guild-id]
   (str "```"
        (let [top (sort-oof-data key guild-id)]
-         (with-out-str (print-table (map #(oof-row-to-table % key)
+         (with-out-str (print-table (map #(oof-row-to-table % key guild-id)
                                          top))))
        "```"))
 
@@ -137,19 +141,20 @@
                message-id :id
                mentions :mentions
                guild-id :guild-id}]
-  (cond
-    (and (is-oof? content) (not bot)) (do-oof-message user-id message-id channel-id guild-id)
-    (and (contains? (set mentions) @bot-id)
-         (re-matches #"<@!?\d+>" content)) (send-message oofhelp channel-id)
-    ;; Commands
-    :else (when (and (= (first content) \!)
-                     (not bot))
-            (when (= (subs content 1) "getoofs")
-              (send-message (get-oofs guild-id) channel-id))
-            (when (= (subs content 1) "myoofs")
-              (send-message (my-oofs guild-id user-id) channel-id))
-            (when (= (subs content 1) "oofhelp")
-              (send-message oofhelp channel-id)))))
+  (when (not bot)
+    (cond
+      (is-oof? content) (do-oof-message user-id message-id channel-id guild-id)
+      (and (contains? (set (map :id mentions)) @bot-id)
+           (re-matches #"<@!?\d+>" content)) (send-message oofhelp channel-id)
+     ;; Commands
+      :else (when (and (= (first content) \!)
+                       (not bot))
+              (when (= (subs content 1) "getoofs")
+                (send-message (get-oofs guild-id) channel-id))
+              (when (= (subs content 1) "myoofs")
+                (send-message (my-oofs guild-id user-id) channel-id))
+              (when (= (subs content 1) "oofhelp")
+                (send-message oofhelp channel-id))))))
 
 (defmethod handle-event :message-reaction-add
   [event-type {:keys [user-id channel-id message-id emoji guild-id]}]
@@ -172,8 +177,11 @@
     (write-edn @oof-data "oof-data.edn")
     (recur)))
 
-(defn -main
-  [& args]
+(defn disconnect-bot [state]
+  (m/stop-connection! (:messaging state))
+  (c/disconnect-bot! (:connection state)))
+
+(defn run []
   (let [event-ch (a/chan 100)
         connection-ch (c/connect-bot! token event-ch :intents #{:guild-messages
                                                                 :guild-message-reactions})
@@ -184,6 +192,9 @@
     (reset! state init-state)
     (save-data)
     (set-status)
-    (e/message-pump! event-ch #'handle-event)
-    (m/stop-connection! messaging-ch)
-    (c/disconnect-bot! connection-ch)))
+    (e/message-pump! event-ch #'handle-event)))
+
+(defn -main
+  [& args]
+  (run)
+  (shutdown-agents))
