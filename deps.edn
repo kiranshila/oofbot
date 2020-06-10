@@ -1,6 +1,6 @@
 {:paths ["src"]
  :deps {org.clojure/clojure {:mvn/version "1.10.1"}
-        org.suskalo/discljord {:mvn/version "0.2.8"}
+        org.suskalo/discljord {:git/url "https://github.com/IGJoshua/discljord.git" :sha "3f7d453c03f3948fe7d521f4d4839ee91d297dcb"}
         org.clojure/core.async {:mvn/version "1.1.587"}}
  :aliases {:depstar
            {:extra-deps
