@@ -100,6 +100,16 @@
    "Top Oofers"
    (oof-data-to-table :given-oof guild-id)))
 
+;; Get the string summary of the user oof data
+(defn my-oofs [guild-id user-id]
+  (str "```\n"
+       "Given Oofs: "
+       (get-in oof-data [guild-id user-id :given-oof])
+       "\n"
+       "Gotten Oofed: "
+       (get-in oof-data [guild-id user-id :gotten-oofed])
+       "```"))
+
 (defmulti handle-event
   (fn [event-type event-data]
     event-type))
@@ -109,7 +119,7 @@
 
 (defn set-status []
   (c/status-update! (:connection @state)
-                    :activity (c/create-activity :name "!getoofs")))
+                    :activity (c/create-activity :name "!oofhelp")))
 
 (defmethod handle-event :message-create
   [event-type {{bot :bot user-id :id username :username} :author
@@ -124,7 +134,11 @@
     (if (and (= (first content) \!)
              (not bot))
       (if (includes? (lower-case content) "getoofs")
-        (send-message (get-oofs guild-id) channel-id)))))
+        (send-message (get-oofs guild-id) channel-id))
+      (if (includes? (lower-case content) "myoofs")
+        (send-message (my-oofs guild-id user-id) channel-id))
+      (if (includes? (lower-case content) "oofhelp")
+        (send-message "```!getoofs - Display oof leaderboard\n!myoofs - Display user's oofs\n!oofhelp - This help```")))))
 
 (defmethod handle-event :message-reaction-add
   [event-type {:keys [user-id channel-id message-id emoji guild-id]}]
@@ -159,5 +173,6 @@
     (reset! state init-state)
     (save-data)
     (e/message-pump! event-ch #'handle-event)
+    (set-status)
     (m/stop-connection! messaging-ch)
     (c/disconnect-bot! connection-ch)))
