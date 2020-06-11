@@ -251,30 +251,31 @@
                message-id :id
                mentions :mentions
                guild-id :guild-id}]
-  (when-not bot
-    (let [prefix (get-command-prefix guild-id)]
-      (cond
-        (str/starts-with? content prefix) (cond
-                                            (= (subs content (count prefix)) "getoofs") (a/thread (send-message (get-oofs guild-id) channel-id))
-                                            (= (subs content (count prefix)) "myoofs") (a/thread (send-message (my-oofs guild-id user-id) channel-id))
-                                            (= (subs content (count prefix)) "oofhelp") (send-message (oofhelp prefix) channel-id)
-                                            (str/starts-with? (subs content (count prefix)) "topcount ") (when-let [new-top-count (second (str/split content #" " 2))]
-                                                                                                           (when-let [new-top-count (and (re-matches #"\d+" new-top-count)
-                                                                                                                                         (Long. new-top-count))]
-                                                                                                             (when (and (= user-id (get-owner-id guild-id))
-                                                                                                                        (<= new-top-count top-count-max))
-                                                                                                               (swap! oof-data assoc-in [guild-id :top-count] new-top-count)
-                                                                                                               (send-message {:description (str "Leaderboard size changed to: " new-top-count)} channel-id))))
-                                            :else (if (is-oof? content)
-                                                    (a/thread (do-oof-message user-id message-id channel-id guild-id))))
-        (and (contains? (set (map :id mentions)) @bot-id)
-             (re-matches #"<@!?\d+>" content)) (send-message (oofhelp (get-command-prefix guild-id)) channel-id)
-        (contains? (set (map :id mentions)) @bot-id) (when-let [new-prefix (second (re-matches #"<@!?\d+>\s+prefix\s+(\S+)" content))]
-                                                       (when (= user-id (get-owner-id guild-id))
-                                                         (swap! oof-data assoc-in [guild-id :command-prefix] new-prefix)
-                                                         (send-message {:description (str "Command prefix changed to: " new-prefix)}
-                                                                       channel-id)))
-        (is-oof? content) (a/thread (do-oof-message user-id message-id channel-id guild-id))))))
+  (a/go
+    (when-not bot
+      (let [prefix (get-command-prefix guild-id)]
+        (cond
+          (str/starts-with? content prefix) (cond
+                                              (= (subs content (count prefix)) "getoofs") (a/thread (send-message (get-oofs guild-id) channel-id))
+                                              (= (subs content (count prefix)) "myoofs") (a/thread (send-message (my-oofs guild-id user-id) channel-id))
+                                              (= (subs content (count prefix)) "oofhelp") (send-message (oofhelp prefix) channel-id)
+                                              (str/starts-with? (subs content (count prefix)) "topcount ") (a/thread (when-let [new-top-count (second (str/split content #" " 2))]
+                                                                                                                       (when-let [new-top-count (and (re-matches #"\d+" new-top-count)
+                                                                                                                                                     (Long. new-top-count))]
+                                                                                                                         (when (and (= user-id (get-owner-id guild-id))
+                                                                                                                                    (<= new-top-count top-count-max))
+                                                                                                                           (swap! oof-data assoc-in [guild-id :top-count] new-top-count)
+                                                                                                                           (send-message {:description (str "Leaderboard size changed to: " new-top-count)} channel-id)))))
+                                              :else (if (is-oof? content)
+                                                      (a/thread (do-oof-message user-id message-id channel-id guild-id))))
+          (and (contains? (set (map :id mentions)) @bot-id)
+               (re-matches #"<@!?\d+>" content)) (send-message (oofhelp (get-command-prefix guild-id)) channel-id)
+          (contains? (set (map :id mentions)) @bot-id) (when-let [new-prefix (second (re-matches #"<@!?\d+>\s+prefix\s+(\S+)" content))]
+                                                         (when (= user-id (get-owner-id guild-id))
+                                                           (swap! oof-data assoc-in [guild-id :command-prefix] new-prefix)
+                                                           (send-message {:description (str "Command prefix changed to: " new-prefix)}
+                                                                         channel-id)))
+          (is-oof? content) (a/thread (do-oof-message user-id message-id channel-id guild-id)))))))
 
 (defmethod handle-event :message-reaction-add
   [event-type {:keys [user-id channel-id message-id emoji guild-id]}]
@@ -289,7 +290,6 @@
           (let [{{oofee-id :id} :author} (a/<! (get-message message-id channel-id))]
             (swap! oof-data update-in [guild-id user-id :given-oof] (fnil dec 0))
             (swap! oof-data update-in [guild-id oofee-id :gotten-oofed] (fnil dec 0))))))
-
 (defn save-data []
   (a/go-loop []
     (a/<! (a/timeout save-timeout))
