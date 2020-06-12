@@ -314,6 +314,7 @@
     (save-data)
     (e/message-pump! event-ch #'handle-event)))
 
+;; Program Entry Point
 (defn -main
   [& args]
   (run)
