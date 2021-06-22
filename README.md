@@ -1,5 +1,8 @@
 # oofbot - A simple, silly bot for Discord, written in Clojure
 
+## Add to your server!
+Use the link [here](https://discord.com/oauth2/authorize?client_id=700527695804629002&permissions=67584&scope=bot) to add oofbot to your server. My uptime has been pretty good.
+
 ## Setup
 ### Building
 Install the Clojure CLI and create the uberjar with
