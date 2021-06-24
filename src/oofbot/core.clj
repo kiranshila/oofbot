@@ -3,17 +3,30 @@
             [discljord.messaging :as m]
             [discljord.events :as e]
             [clojure.core.async :as a]
-            [clojure.string :refer [includes? lower-case trim]]
+            [clojure.string :as s]
             [clojure.java.io :as io]
-            [clojure.edn :as edn]
-            [clojure.string :as str])
-  (:import
-   [java.time ZoneId ZonedDateTime Instant]
-   [java.time.format DateTimeFormatter])
+            [clojure.edn :as edn])
+  (:import [java.time Instant])
   (:gen-class))
 
-;; Discord Bot API Token
-(def token (trim (slurp "token.txt")))
+;;;;;;;;;;;;;; BOT SETUP ;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; How many users in the "top" list
+(def default-top-count 5)
+(def top-count-max 25)
+;; Timeout to query for new usename
+(def username-timeout 3600000)
+;; Data saving timeout
+(def save-timeout 300000)
+;; File where bot token is stored
+(def token-filename "token.txt")
+;; File where bot data is stored
+(def data-filename "oof-data.edn")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Grabs the token from the file
+(def token (s/trim (slurp token-filename)))
 
 ;; Writes data to an edn file
 (defn write-edn [data filename]
@@ -29,40 +42,22 @@
 
 ;; Atom for oofbot data
 (def oof-data
-  (if (.exists (io/as-file "oof-data.edn"))
-    (atom (with-open [r (java.io.PushbackReader. (io/reader "oof-data.edn"))]
-            (edn/read r)))
+  (if (.exists (io/as-file data-filename))
+    (atom (edn/read-string (slurp data-filename)))
     (atom nil)))
-
-;; How many users in the "top" list
-(def default-top-count 5)
-(def top-count-max 25)
-
-(def default-command-prefix "!")
-
-;; Timeout to query for new usename
-(def username-timeout 3600000)
-
-;; Data saving timeout
-(def save-timeout 300000)
 
 ;; Image base url
 (def discord-base "https://cdn.discordapp.com/")
 
-;; User avatar url
 (defn user-avatar-url [user-id user-avatar]
   (str discord-base "avatars/" user-id "/" user-avatar
        (if (= "a_" (subs user-avatar 0 2))
          ".gif"
          ".png")))
 
-(defn current-time []
-  (.format (ZonedDateTime/now (ZoneId/of "UTC")) DateTimeFormatter/ISO_OFFSET_DATE_TIME))
-
 ;; Embed Template
 (defn embed-template []
   {:color 0xAD2D3C
-   :timestamp (current-time)
    :footer {:text "Built in Clojure with Discljord"}})
 
 ;; Check to see if a given str is a valid oof
@@ -126,49 +121,68 @@
         (recur (:id message) messages))
       (recur last-message-id (get-messages-before last-message-id channel-id)))))
 
-;; Send a str as a message on the channel
-(defn send-message [message channel-id]
-  (m/create-message!
+(defn send-interaction-response [interaction-id interaction-token data]
+  (m/create-interaction-response!
    (:messaging @state)
-   channel-id :embed
-   (merge (embed-template)
-          message)))
+   interaction-id
+   interaction-token
+   4
+   :data
+   {:tts false
+    :embeds [(merge (embed-template)
+                    data)]}))
+
+(defn send-secret-interaction-response [interaction-id interaction-token data]
+  (m/create-interaction-response!
+   (:messaging @state)
+   interaction-id
+   interaction-token
+   4
+   :data
+   {:tts false
+    :flags 64
+    :embeds [(merge (embed-template)
+                    data)]}))
+
 
 ;; Update the oof-data state from a message event
+
+
 (defn do-oof-message [user-id message-id channel-id guild-id]
   (get-username user-id guild-id) ; For the side-effects
   (swap! oof-data update-in [guild-id user-id :given-oof] (fnil inc 0))
-  (let [{{bot :bot user-id :id} :author
-         content :content
-         message-id :id}
+  (let [{{user-id :id} :author}
         (find-oof-parent message-id channel-id)]
     (get-username user-id guild-id) ; For the side-effects
     (swap! oof-data update-in [guild-id user-id :gotten-oofed] (fnil inc 0))))
 
 ;; Sort the oof data by key
 (defn sort-oof-data [key guild-id]
-  (take (get-top-count guild-id) (sort-by (comp key second) (fnil > 0 0) (into [] (get @oof-data guild-id)))))
+  (take (get-top-count guild-id)
+        (sort-by (comp key second)
+                 (fnil > 0 0)
+                 (into [] (get @oof-data guild-id)))))
 
 (defn oof-table-data [key guild-id]
   (let [top (sort-oof-data key guild-id)]
-    (str/join "\n"
-              (for [[id data] top]
-                (if-let [count (key data)]
-                  (str count
-                       " - "
-                       (get-username id guild-id)))))))
+    (s/join "\n"
+            (for [[id data] top]
+              (when-let [count (key data)]
+                (str count
+                     " - "
+                     (get-username id guild-id)))))))
 
 (defn get-oof-rank [key guild-id user-id]
   (->> (keep-indexed
         (fn [idx item]
-          (if (= (first item)
-                 user-id)
+          (when (= (first item)
+                   user-id)
             idx))
         (sort-oof-data key guild-id))
        first
        ((fnil inc (count (keys (@oof-data guild-id)))))))
 
-;; Get the string summary of oof-data
+;; Get the summary of oof-data
 (defn get-oofs [guild-id]
   {:title "Oof Leaderboard"
    :fields [{:name "Top Oofed Users"
@@ -178,7 +192,7 @@
              :value (oof-table-data :given-oof guild-id)
              :inline true}]})
 
-;; Get the string summary of the user oof data
+;; Get the summary of the user oof data
 (defn my-oofs [guild-id user-id]
   {:author {:name (str (get-username user-id guild-id) "'s oofs")
             :icon_url (user-avatar-url user-id (get-user-avatar user-id guild-id))}
@@ -201,25 +215,9 @@
              :value "\u200b"
              :inline true}]})
 
-(defn oofhelp [prefix]
-  {:desription "Oofbot Help"
-   :fields [{:name (str prefix "getoofs")
-             :value "Oof leaderboard"}
-            {:name (str prefix "myoofs")
-             :value "Your oof count"}
-            {:name (str prefix "oofhelp")
-             :value "This help"}
-            {:name (str prefix "topcount <count>")
-             :value "Server owner: Changes the displayed leaderboard size"}
-            {:name "@oofbot prefix <new prefix>"
-             :value "Server owner: change the command prefix"}]})
-
 (defn set-status []
   (c/status-update! (:connection @state)
-                    :activity (c/create-activity :name "@oofbot")))
-
-(defn get-command-prefix [guild-id]
-  (get-in @oof-data [guild-id :command-prefix] default-command-prefix))
+                    :activity (c/create-activity :name "Emacs")))
 
 (defn get-owner-id [guild-id]
   (if-let [owner-id (get-in @oof-data [guild-id :owner-id])]
@@ -228,73 +226,103 @@
       (swap! oof-data assoc-in [guild-id :owner-id] new-owner-id)
       new-owner-id)))
 
+(defn register-commands []
+  @(m/bulk-overwrite-guild-application-commands!
+    (:messaging @state)
+    @bot-id
+    "533112383321669633"
+    [{:name "oof"
+      :description "Oofbot commands"
+      :options [{:name "top"
+                 :type 1
+                 :description "Gets the oof leaderboard"}
+                {:name "stats"
+                 :type 1
+                 :description "Gets your oof status"}
+                {:name "topcount"
+                 :type 1
+                 :description "Sets the leaderboard size"
+                 :options [{:name "count"
+                            :type 4
+                            :required true
+                            :description "Size of the leaderboard"}]}]}]))
+
 (defmulti handle-event
-  (fn [event-type event-data]
+  (fn [event-type _]
     event-type))
 
 (defmethod handle-event :default
-  [event-type event-data])
+  [_ _])
 
 (defmethod handle-event :ready
-  [event-type {{id :id} :user}]
+  [_ {{id :id} :user}]
   (reset! bot-id id)
-  (set-status))
+  (set-status)
+  (register-commands))
 
 (defmethod handle-event :guild-create
-  [event-type {:keys [owner-id id]}]
+  [_ {:keys [owner-id id]}]
   (swap! oof-data assoc-in [id :owner-id] owner-id))
 
-(defmethod handle-event :message-create
-  [event-type {{bot :bot user-id :id username :username} :author
-               channel-id :channel-id
-               content :content
-               message-id :id
-               mentions :mentions
-               guild-id :guild-id}]
-  (a/go
-    (when-not bot
-      (let [prefix (get-command-prefix guild-id)]
-        (cond
-          (str/starts-with? content prefix) (cond
-                                              (= (subs content (count prefix)) "getoofs") (a/thread (send-message (get-oofs guild-id) channel-id))
-                                              (= (subs content (count prefix)) "myoofs") (a/thread (send-message (my-oofs guild-id user-id) channel-id))
-                                              (= (subs content (count prefix)) "oofhelp") (send-message (oofhelp prefix) channel-id)
-                                              (str/starts-with? (subs content (count prefix)) "topcount ") (a/thread (when-let [new-top-count (second (str/split content #" " 2))]
-                                                                                                                       (when-let [new-top-count (and (re-matches #"\d+" new-top-count)
-                                                                                                                                                     (Long. new-top-count))]
-                                                                                                                         (when (and (= user-id (get-owner-id guild-id))
-                                                                                                                                    (<= new-top-count top-count-max))
-                                                                                                                           (swap! oof-data assoc-in [guild-id :top-count] new-top-count)
-                                                                                                                           (send-message {:description (str "Leaderboard size changed to: " new-top-count)} channel-id)))))
-                                              :else (if (is-oof? content)
-                                                      (a/thread (do-oof-message user-id message-id channel-id guild-id))))
-          (and (contains? (set (map :id mentions)) @bot-id)
-               (re-matches #"<@!?\d+>" content)) (send-message (oofhelp (get-command-prefix guild-id)) channel-id)
-          (contains? (set (map :id mentions)) @bot-id) (when-let [new-prefix (second (re-matches #"<@!?\d+>\s+prefix\s+(\S+)" content))]
-                                                         (when (= user-id (get-owner-id guild-id))
-                                                           (swap! oof-data assoc-in [guild-id :command-prefix] new-prefix)
-                                                           (send-message {:description (str "Command prefix changed to: " new-prefix)}
-                                                                         channel-id)))
-          (is-oof? content) (a/thread (do-oof-message user-id message-id channel-id guild-id)))))))
+(defmethod handle-event :interaction-create
+  [_ {{[{command-name :name
+         [{attribute-name :name
+           attribute-value :value}] :options}] :options} :data
+      guild-id :guild-id
+      {{user-id :id} :user} :member
+      interaction-id :id
+      interaction-token :token}]
+  (letfn [(send-response [payload]
+            (send-interaction-response interaction-id interaction-token payload))
+          (send-secret-response [payload]
+                                (send-secret-interaction-response interaction-id interaction-token payload))]
+    (case command-name
+      "top" (send-response (get-oofs guild-id))
+      "stats" (send-secret-response (my-oofs guild-id user-id))
+      "topcount" (send-secret-response (if (not= "count" attribute-name)
+                                         {:description "Somehow got not a count? - File an issue"}
+                                         (if (not= user-id (get-owner-id guild-id))
+                                           {:description "You're not the server owner - you can't do this"}
+                                           (if (< 0 attribute-value top-count-max)
+                                             (do
+                                               (swap! oof-data assoc-in [guild-id :top-count] attribute-value)
+                                               {:description (str "Leaderboard size changed to: " attribute-value)})
+                                             {:description "Leaderboard size out of range"}))))
+      (println "Got malformed interaction"))))
 
+(defmethod handle-event :message-create
+  [_ {{bot :bot user-id :id} :author
+      channel-id :channel-id
+      content :content
+      message-id :id
+      guild-id :guild-id}]
+  (a/go
+    (when-not bot ; Bots can't oof
+      (when (is-oof? content)
+        (a/thread (do-oof-message user-id message-id channel-id guild-id))))))
+
+; Oof reaction adds
 (defmethod handle-event :message-reaction-add
-  [event-type {:keys [user-id channel-id message-id emoji guild-id]}]
-  (a/go (if (= "OOF" (:name emoji))
+  [_ {:keys [user-id channel-id message-id emoji guild-id]}]
+  (a/go (when (= "OOF" (:name emoji))
           (let [{{oofee-id :id} :author} (a/<! (get-message message-id channel-id))]
             (swap! oof-data update-in [guild-id user-id :given-oof] (fnil inc 0))
             (swap! oof-data update-in [guild-id oofee-id :gotten-oofed] (fnil inc 0))))))
 
+; Oof reaction removals
 (defmethod handle-event :message-reaction-remove
-  [event-type {:keys [user-id channel-id message-id emoji guild-id]}]
-  (a/go (if (= "OOF" (:name emoji))
+  [_ {:keys [user-id channel-id message-id emoji guild-id]}]
+  (a/go (when (= "OOF" (:name emoji))
           (let [{{oofee-id :id} :author} (a/<! (get-message message-id channel-id))]
             (swap! oof-data update-in [guild-id user-id :given-oof] (fnil dec 0))
             (swap! oof-data update-in [guild-id oofee-id :gotten-oofed] (fnil dec 0))))))
+
+; Data saving (happens every save-timeout)
 (defn save-data []
   (a/go-loop []
     (a/<! (a/timeout save-timeout))
     (print "Saving data\n")
-    (write-edn @oof-data "oof-data.edn")
+    (write-edn @oof-data data-filename)
     (recur)))
 
 (defn disconnect-bot [state]
@@ -316,6 +344,6 @@
 
 ;; Program Entry Point
 (defn -main
-  [& args]
+  [& _]
   (run)
   (shutdown-agents))
