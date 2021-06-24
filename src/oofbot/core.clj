@@ -227,10 +227,9 @@
       new-owner-id)))
 
 (defn register-commands []
-  @(m/bulk-overwrite-guild-application-commands!
+  @(m/bulk-overwrite-global-application-commands!
     (:messaging @state)
     @bot-id
-    "533112383321669633"
     [{:name "oof"
       :description "Oofbot commands"
       :options [{:name "top"
