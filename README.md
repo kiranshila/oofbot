@@ -2,7 +2,7 @@
 
 ## Add to your server!
 
-Use the link [here](https://discord.com/oauth2/authorize?client_id=700527695804629002&permissions=67584&scope=bot) to add oofbot to your server. My uptime has been pretty good.
+Use the link [here](https://discord.com/api/oauth2/authorize?client_id=700527695804629002&permissions=67584&scope=bot%20applications.commands) to add oofbot to your server. My uptime has been pretty good.
 
 ## Setup
 
