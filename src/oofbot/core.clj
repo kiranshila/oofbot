@@ -18,15 +18,13 @@
 (def username-timeout 3600000)
 ;; Data saving timeout
 (def save-timeout 300000)
-;; File where bot token is stored
-(def token-filename "token.txt")
 ;; File where bot data is stored
-(def data-filename "oof-data.edn")
+(def data-filename (atom ""))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; Grabs the token from the file
-(def token (s/trim (slurp token-filename)))
+;; Atom for the bot token
+(def token (atom ""))
 
 ;; Writes data to an edn file
 (defn write-edn [data filename]
@@ -41,10 +39,7 @@
 (defonce bot-id (atom nil))
 
 ;; Atom for oofbot data
-(def oof-data
-  (if (.exists (io/as-file data-filename))
-    (atom (edn/read-string (slurp data-filename)))
-    (atom nil)))
+(def oof-data (atom nil))
 
 ;; Image base url
 (def discord-base "https://cdn.discordapp.com/")
@@ -67,7 +62,7 @@
 (defn get-top-count [guild-id]
   (get-in @oof-data [guild-id :top-count] default-top-count))
 
-;; Get a vector of 5 messages before 
+;; Get a vector of 5 messages before
 (defn get-messages-before [before-id channel-id]
   @(m/get-channel-messages! (:messaging @state) channel-id
                             :before before-id
@@ -144,9 +139,7 @@
     :embeds [(merge (embed-template)
                     data)]}))
 
-
 ;; Update the oof-data state from a message event
-
 
 (defn do-oof-message [user-id message-id channel-id guild-id]
   (get-username user-id guild-id) ; For the side-effects
@@ -274,7 +267,7 @@
   (letfn [(send-response [payload]
             (send-interaction-response interaction-id interaction-token payload))
           (send-secret-response [payload]
-                                (send-secret-interaction-response interaction-id interaction-token payload))]
+            (send-secret-interaction-response interaction-id interaction-token payload))]
     (case command-name
       "top" (send-response (get-oofs guild-id))
       "stats" (send-secret-response (my-oofs guild-id user-id))
@@ -321,7 +314,7 @@
   (a/go-loop []
     (a/<! (a/timeout save-timeout))
     (print "Saving data\n")
-    (write-edn @oof-data data-filename)
+    (write-edn @oof-data @data-filename)
     (recur)))
 
 (defn disconnect-bot [state]
@@ -330,10 +323,10 @@
 
 (defn run []
   (let [event-ch (a/chan 100)
-        connection-ch (c/connect-bot! token event-ch :intents #{:guilds
-                                                                :guild-messages
-                                                                :guild-message-reactions})
-        messaging-ch (m/start-connection! token)
+        connection-ch (c/connect-bot! @token event-ch :intents #{:guilds
+                                                                 :guild-messages
+                                                                 :guild-message-reactions})
+        messaging-ch (m/start-connection! @token)
         init-state {:connection connection-ch
                     :event event-ch
                     :messaging messaging-ch}]
@@ -343,6 +336,13 @@
 
 ;; Program Entry Point
 (defn -main
-  [& _]
+  [& [data-path]]
+  ;; Read the token
+  (reset! token (System/getenv "BOT_TOKEN"))
+  ;; Cache the db path
+  (reset! data-filename data-path)
+  ;; Read the db (if it exists)
+  (when (.exists (io/as-file data-path))
+    (reset! oof-data (edn/read-string (slurp data-path))))
   (run)
   (shutdown-agents))

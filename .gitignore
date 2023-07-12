@@ -4,3 +4,6 @@ oof-data.edn
 .DS_Store
 .nrepl-port
 .cpcache/
+target/
+.clj-kondo/
+.lsp/

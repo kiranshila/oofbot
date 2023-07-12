@@ -11,15 +11,17 @@ Use the link [here](https://discord.com/api/oauth2/authorize?client_id=700527695
 Install the Clojure CLI and create the uberjar with
 
 ```
-clojure -A:depstar -m hf.depstar.uberjar Oofbot.jar -C -m oofbot.core
+clojure -T:build uber
 ```
+
+This will create an artifact in the `target` folder.
 
 ### Running
 
 The bot requires an api token located in `token.txt`, located next to the jar. Then just run
 
 ```
-java -jar Oofbot.jar
+java -jar oofbot.jar
 ```
 
 ## Usage
